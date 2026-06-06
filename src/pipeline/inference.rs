@@ -1,7 +1,6 @@
 use image::DynamicImage;
 use ndarray::{Array, Array4, s};
 use ort::session::Session;
-use tokio::sync::Mutex;
 use tracing::debug;
 
 use crate::config::AppConfig;
@@ -36,7 +35,7 @@ pub struct InferenceOutput {
 /// Since `ort::Session::run()` requires `&mut self`, the session is
 /// protected by a `tokio::sync::Mutex`.
 pub struct OnnxInference {
-    session: Mutex<Session>,
+    session: std::sync::Arc<std::sync::Mutex<Session>>,
     preprocess: PreprocessConfig,
     input_name: String,
     target_label_index: usize,
@@ -63,7 +62,7 @@ impl OnnxInference {
         );
 
         Ok(Self {
-            session: Mutex::new(session),
+            session: std::sync::Arc::new(std::sync::Mutex::new(session)),
             preprocess: PreprocessConfig {
                 image_size: config.model_image_size,
                 mean: config.model_image_mean,
@@ -76,33 +75,25 @@ impl OnnxInference {
     }
 
     /// Pre-process image and run inference, returning a structured result.
-    ///
-    /// # Pre-processing steps (ViT / HuggingFace convention)
-    ///
-    /// 1. Resize to `image_size × image_size` using Lanczos3.
-    /// 2. Convert to RGB8 pixel buffer.
-    /// 3. Normalize each channel: `(pixel / 255.0 - mean) / std`.
-    /// 4. Reshape into NCHW format: `[1, 3, H, W]`.
-    ///
-    /// # Output
-    ///
-    /// The model outputs raw logits of shape `[1, num_classes]`.
-    /// We apply softmax to convert logits → probabilities, then return
-    /// the probability at `target_label_index` as the score.
     pub async fn predict(&self, img: &DynamicImage) -> PipelineResult<InferenceOutput> {
         let tensor = self.preprocess(img);
 
         let input_value = ort::value::Tensor::from_array(tensor)?;
+        let session = std::sync::Arc::clone(&self.session);
+        let input_name = self.input_name.clone();
 
-        // Acquire the mutex and run inference.
-        let mut session = self.session.lock().await;
-        let outputs = session.run(
-            ort::inputs![self.input_name.as_str() => input_value],
-        )?;
-
-        // Extract raw logits from the first output tensor.
-        let (_, data) = outputs[0].try_extract_tensor::<f32>()?;
-        let logits: Vec<f32> = data.to_vec();
+        // Run CPU-heavy inference on Tokio's blocking thread pool to avoid stalling the async runtime.
+        let logits: Vec<f32> = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<f32>> {
+            let mut session = session.lock().unwrap();
+            let outputs = session.run(ort::inputs![input_name.as_str() => input_value])?;
+            
+            // Extract raw logits from the first output tensor inside the closure
+            // because outputs holds a lifetime bound to the session lock.
+            let (_, data) = outputs[0].try_extract_tensor::<f32>()?;
+            Ok(data.to_vec())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("spawn_blocking failed: {e}"))??;
 
         // Apply softmax to convert logits → probabilities.
         let probabilities = softmax(&logits);
