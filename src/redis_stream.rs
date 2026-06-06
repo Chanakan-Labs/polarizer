@@ -175,21 +175,26 @@ async fn publish_result(
 
     let payload = serde_json::to_string(output)?;
 
-    let _: String = conn
-        .xadd(
-            result_key,
-            "*",
-            &[
-                ("url", output.url.as_str()),
-                ("phash", output.phash.as_str()),
-                ("score", &output.score.to_string()),
-                ("label", output.label.as_str()),
-                ("cache_hit", &output.cache_hit.to_string()),
-                ("elapsed_ms", &output.elapsed_ms.to_string()),
-                ("payload", &payload),
-            ],
-        )
-        .await?;
+    let mut pipe = redis::pipe();
+    pipe.atomic()
+        .cmd("XADD")
+        .arg(result_key)
+        .arg("MAXLEN")
+        .arg("~")
+        .arg(10000)
+        .arg("*")
+        .arg("url").arg(output.url.as_str())
+        .arg("phash").arg(output.phash.as_str())
+        .arg("score").arg(output.score.to_string())
+        .arg("label").arg(output.label.as_str())
+        .arg("cache_hit").arg(output.cache_hit.to_string())
+        .arg("elapsed_ms").arg(output.elapsed_ms.to_string())
+        .arg("payload").arg(&payload)
+        .cmd("PUBLISH")
+        .arg(format!("polarizer:events:{}", output.url))
+        .arg(&payload);
+
+    let _: () = pipe.query_async(&mut conn).await?;
 
     debug!(
         result_key,
@@ -198,7 +203,7 @@ async fn publish_result(
         label = %output.label,
         cache_hit = output.cache_hit,
         elapsed_ms = output.elapsed_ms,
-        "result published"
+        "result published to stream and pubsub"
     );
 
     Ok(())
