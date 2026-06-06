@@ -38,7 +38,6 @@ pub struct OnnxInference {
     session: std::sync::Arc<std::sync::Mutex<Session>>,
     preprocess: PreprocessConfig,
     input_name: String,
-    target_label_index: usize,
     labels: Vec<String>,
 }
 
@@ -57,7 +56,6 @@ impl OnnxInference {
             image_size = config.model_image_size,
             input_name = %config.model_input_name,
             labels = ?config.model_labels,
-            target_index = config.model_target_label_index,
             "ONNX model loaded"
         );
 
@@ -69,7 +67,6 @@ impl OnnxInference {
                 std: config.model_image_std,
             },
             input_name: config.model_input_name.clone(),
-            target_label_index: config.model_target_label_index,
             labels: config.model_labels.clone(),
         })
     }
@@ -86,7 +83,7 @@ impl OnnxInference {
         let logits: Vec<f32> = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<f32>> {
             let mut session = session.lock().unwrap();
             let outputs = session.run(ort::inputs![input_name.as_str() => input_value])?;
-            
+
             // Extract raw logits from the first output tensor inside the closure
             // because outputs holds a lifetime bound to the session lock.
             let (_, data) = outputs[0].try_extract_tensor::<f32>()?;
@@ -98,17 +95,19 @@ impl OnnxInference {
         // Apply softmax to convert logits → probabilities.
         let probabilities = softmax(&logits);
 
-        // Extract the target label's probability.
-        let score = probabilities
-            .get(self.target_label_index)
-            .copied()
-            .unwrap_or(0.0);
+        // Extract the label with the highest probability.
+        let (max_index, max_score) = probabilities
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or((0, &0.0));
 
+        let score = *max_score;
         let label = self
             .labels
-            .get(self.target_label_index)
+            .get(max_index)
             .cloned()
-            .unwrap_or_else(|| format!("class_{}", self.target_label_index));
+            .unwrap_or_else(|| format!("class_{}", max_index));
 
         Ok(InferenceOutput {
             score,

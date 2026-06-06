@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
+use redis::streams::{StreamReadOptions, StreamReadReply};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, instrument, warn};
 
@@ -128,7 +128,11 @@ impl StreamConsumer {
                         warn!(msg_id = %msg_id, "message missing 'url' field — acknowledging and skipping");
                         let mut xack_conn = self.pipeline.redis.clone();
                         let _: Result<(), _> = xack_conn
-                            .xack(&self.config.stream_key, &self.config.consumer_group, &[&msg_id])
+                            .xack(
+                                &self.config.stream_key,
+                                &self.config.consumer_group,
+                                &[&msg_id],
+                            )
                             .await;
                         continue;
                     };
@@ -145,7 +149,9 @@ impl StreamConsumer {
 
                         match pipeline.process(&url).await {
                             Ok(output) => {
-                                if let Err(e) = publish_result(&pipeline, &result_key, &output).await {
+                                if let Err(e) =
+                                    publish_result(&pipeline, &result_key, &output).await
+                                {
                                     error!(error = %e, msg_id = %msg_id, "failed to publish result");
                                 }
                             }
@@ -157,9 +163,7 @@ impl StreamConsumer {
 
                         // Acknowledge regardless — failed messages should go to DLQ, not block the stream.
                         let mut conn = pipeline.redis.clone();
-                        let _: Result<(), _> = conn
-                            .xack(&stream_key, &group, &[&msg_id])
-                            .await;
+                        let _: Result<(), _> = conn.xack(&stream_key, &group, &[&msg_id]).await;
                     });
                 }
             }
@@ -167,7 +171,9 @@ impl StreamConsumer {
 
         // Wait for all in-flight tasks to complete.
         info!("waiting for in-flight workers to drain");
-        let _ = semaphore.acquire_many(self.config.worker_count as u32).await;
+        let _ = semaphore
+            .acquire_many(self.config.worker_count as u32)
+            .await;
         info!("all workers drained");
 
         Ok(())
@@ -192,13 +198,20 @@ async fn publish_result(
         .arg("~")
         .arg(10000)
         .arg("*")
-        .arg("url").arg(output.url.as_str())
-        .arg("phash").arg(output.phash.as_str())
-        .arg("score").arg(output.score.to_string())
-        .arg("label").arg(output.label.as_str())
-        .arg("cache_hit").arg(output.cache_hit.to_string())
-        .arg("elapsed_ms").arg(output.elapsed_ms.to_string())
-        .arg("payload").arg(&payload)
+        .arg("url")
+        .arg(output.url.as_str())
+        .arg("phash")
+        .arg(output.phash.as_str())
+        .arg("score")
+        .arg(output.score.to_string())
+        .arg("label")
+        .arg(output.label.as_str())
+        .arg("cache_hit")
+        .arg(output.cache_hit.to_string())
+        .arg("elapsed_ms")
+        .arg(output.elapsed_ms.to_string())
+        .arg("payload")
+        .arg(&payload)
         .cmd("PUBLISH")
         .arg(format!("polarizer:events:{}", output.url))
         .arg(&payload);

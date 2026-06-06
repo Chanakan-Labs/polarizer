@@ -60,10 +60,6 @@ pub struct AppConfig {
     /// Per-channel std for image normalization, comma-separated (e.g. "0.5,0.5,0.5").
     pub model_image_std: [f32; 3],
 
-    /// Index of the target label in the model's output logits.
-    /// For AdamCodd/vit-base-nsfw-detector: 0 = sfw, 1 = nsfw.
-    pub model_target_label_index: usize,
-
     /// Comma-separated label names matching the model's output indices.
     /// Used for human-readable output (e.g. "sfw,nsfw").
     pub model_labels: Vec<String>,
@@ -128,17 +124,14 @@ impl AppConfig {
             model_image_size: optional("MODEL_IMAGE_SIZE", "384")
                 .parse()
                 .context("MODEL_IMAGE_SIZE must be a valid u32")?,
-            model_image_mean: parse_f32_triple(
-                &optional("MODEL_IMAGE_MEAN", "0.5,0.5,0.5"),
-            )
-            .context("MODEL_IMAGE_MEAN must be three comma-separated floats (e.g. 0.5,0.5,0.5)")?,
-            model_image_std: parse_f32_triple(
-                &optional("MODEL_IMAGE_STD", "0.5,0.5,0.5"),
-            )
-            .context("MODEL_IMAGE_STD must be three comma-separated floats (e.g. 0.5,0.5,0.5)")?,
-            model_target_label_index: optional("MODEL_TARGET_LABEL_INDEX", "1")
-                .parse()
-                .context("MODEL_TARGET_LABEL_INDEX must be a valid usize")?,
+            model_image_mean: parse_f32_triple(&optional("MODEL_IMAGE_MEAN", "0.5,0.5,0.5"))
+                .context(
+                    "MODEL_IMAGE_MEAN must be three comma-separated floats (e.g. 0.5,0.5,0.5)",
+                )?,
+            model_image_std: parse_f32_triple(&optional("MODEL_IMAGE_STD", "0.5,0.5,0.5"))
+                .context(
+                    "MODEL_IMAGE_STD must be three comma-separated floats (e.g. 0.5,0.5,0.5)",
+                )?,
             model_labels: optional("MODEL_LABELS", "sfw,nsfw")
                 .split(',')
                 .map(|s| s.trim().to_owned())
@@ -171,6 +164,10 @@ fn parse_f32_triple(s: &str) -> Result<[f32; 3]> {
         .collect::<Result<Vec<_>, _>>()
         .context("each value must be a valid float")?;
 
-    anyhow::ensure!(parts.len() == 3, "expected exactly 3 values, got {}", parts.len());
+    anyhow::ensure!(
+        parts.len() == 3,
+        "expected exactly 3 values, got {}",
+        parts.len()
+    );
     Ok([parts[0], parts[1], parts[2]])
 }

@@ -1,11 +1,11 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use axum::{Router, Json, extract::State, routing::get};
+use axum::{Json, Router, extract::State, routing::get};
 use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// Shared, lock-free health state.
 pub struct HealthState {
@@ -43,7 +43,9 @@ async fn liveness() -> Json<HealthResponse> {
     })
 }
 
-async fn readiness(State(state): State<Arc<HealthState>>) -> (axum::http::StatusCode, Json<HealthResponse>) {
+async fn readiness(
+    State(state): State<Arc<HealthState>>,
+) -> (axum::http::StatusCode, Json<HealthResponse>) {
     let ready = state.is_ready();
     let status_code = if ready {
         axum::http::StatusCode::OK

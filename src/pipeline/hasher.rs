@@ -1,5 +1,5 @@
 use image::DynamicImage;
-use image_hasher::{HasherConfig, HashAlg};
+use image_hasher::{HashAlg, HasherConfig};
 
 /// Perceptual hasher using DCT-based pHash.
 ///

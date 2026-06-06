@@ -15,10 +15,7 @@ pub enum PipelineError {
     PayloadTooLarge { max_bytes: u64 },
 
     #[error("upstream returned non-success status {status} for {url}")]
-    UpstreamStatus {
-        status: u16,
-        url: String,
-    },
+    UpstreamStatus { status: u16, url: String },
 
     // ── Image processing ────────────────────────────────────────────────
     #[error("image decode failed: {0}")]

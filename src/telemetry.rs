@@ -5,8 +5,8 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 /// * In development (`RUST_LOG` unset or `LOG_FORMAT != json`): pretty, human-readable output.
 /// * In production (`LOG_FORMAT=json`): structured JSON lines to stdout for log aggregation.
 pub fn init_tracing(default_level: &str) {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
     let is_json = std::env::var("LOG_FORMAT")
         .map(|v| v.eq_ignore_ascii_case("json"))

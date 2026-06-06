@@ -123,10 +123,13 @@ impl Pipeline {
             if let Some((score_str, label)) = cached_json.split_once(':') {
                 if let Ok(score) = score_str.parse::<f32>() {
                     debug!(phash = %phash, score, label, "phash cache hit — skipping inference");
-                    
+
                     let url_cache_value = format!("{}:{}:{}", score, label, phash);
                     let ttl_secs = self.config.phash_cache_ttl.as_secs();
-                    let _: () = conn.set_ex(&url_cache_key, &url_cache_value, ttl_secs).await.unwrap_or(());
+                    let _: () = conn
+                        .set_ex(&url_cache_key, &url_cache_value, ttl_secs)
+                        .await
+                        .unwrap_or(());
 
                     return Ok(PipelineOutput {
                         url: url.to_owned(),
