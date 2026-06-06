@@ -146,7 +146,7 @@ impl AppConfig {
             health_port: optional("HEALTH_PORT", "9090")
                 .parse()
                 .context("HEALTH_PORT must be a valid u16")?,
-            log_level: optional("LOG_LEVEL", "info"),
+            log_level: optional("LOG_LEVEL", "info,ort=warn"),
         })
     }
 }
