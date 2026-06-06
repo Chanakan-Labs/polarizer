@@ -196,14 +196,14 @@ async fn publish_result(
 
     let _: () = pipe.query_async(&mut conn).await?;
 
-    debug!(
+    info!(
         result_key,
         url = %output.url,
         score = output.score,
         label = %output.label,
         cache_hit = output.cache_hit,
         elapsed_ms = output.elapsed_ms,
-        "result published to stream and pubsub"
+        "processed image and published result"
     );
 
     Ok(())
