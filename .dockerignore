@@ -1,0 +1,12 @@
+target/
+.git/
+.env
+*.onnx
+*.ort
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
