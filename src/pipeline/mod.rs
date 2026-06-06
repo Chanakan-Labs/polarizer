@@ -31,10 +31,12 @@ pub struct Pipeline {
 pub struct PipelineOutput {
     /// The original image URL that was processed.
     pub url: String,
-    /// Perceptual hash (hex-encoded).
+    /// Perceptual hash (base64-encoded).
     pub phash: String,
-    /// Model confidence score (0.0–1.0).
+    /// Probability for the target label (0.0–1.0).
     pub score: f32,
+    /// Human-readable label name (e.g. "nsfw").
+    pub label: String,
     /// Whether the score came from the pHash cache.
     pub cache_hit: bool,
     /// Wall-clock processing time in milliseconds.
@@ -50,7 +52,7 @@ impl Pipeline {
             .await
             .map_err(PipelineError::Redis)?;
 
-        let inference = OnnxInference::new(&config.model_path)?;
+        let inference = OnnxInference::new(config)?;
         let downloader = ImageDownloader::new(config.max_download_bytes);
         let hasher = PerceptualHasher::new();
 
@@ -83,28 +85,41 @@ impl Pipeline {
 
         // ── Step 4: Check pHash cache ───────────────────────────────────
         let mut conn = self.redis.clone();
-        let cached: Option<f32> = conn.get(&cache_key).await.ok().flatten();
+        let cached: Option<String> = conn.get(&cache_key).await.ok().flatten();
 
-        if let Some(score) = cached {
-            debug!(phash = %phash, score, "cache hit — skipping inference");
-            return Ok(PipelineOutput {
-                url: url.to_owned(),
-                phash,
-                score,
-                cache_hit: true,
-                elapsed_ms: start.elapsed().as_millis() as u64,
-            });
+        if let Some(cached_json) = cached {
+            // Cache stores "score:label" for compactness.
+            if let Some((score_str, label)) = cached_json.split_once(':') {
+                if let Ok(score) = score_str.parse::<f32>() {
+                    debug!(phash = %phash, score, label, "cache hit — skipping inference");
+                    return Ok(PipelineOutput {
+                        url: url.to_owned(),
+                        phash,
+                        score,
+                        label: label.to_owned(),
+                        cache_hit: true,
+                        elapsed_ms: start.elapsed().as_millis() as u64,
+                    });
+                }
+            }
         }
 
         // ── Step 5: Run ONNX inference ──────────────────────────────────
-        let score = self.inference.predict(&img).await?;
+        let result = self.inference.predict(&img).await?;
 
-        debug!(phash = %phash, score, "inference complete");
+        debug!(
+            phash = %phash,
+            score = result.score,
+            label = %result.label,
+            logits = ?result.logits,
+            "inference complete"
+        );
 
         // ── Step 6: Cache the result ────────────────────────────────────
-        let ttl_secs = self.config.phash_cache_ttl.as_secs() as i64;
+        let cache_value = format!("{}:{}", result.score, result.label);
+        let ttl_secs = self.config.phash_cache_ttl.as_secs();
         let _: () = conn
-            .set_ex(&cache_key, score, ttl_secs as u64)
+            .set_ex(&cache_key, &cache_value, ttl_secs)
             .await
             .map_err(|e| {
                 warn!(error = %e, key = %cache_key, "failed to cache phash score");
@@ -114,7 +129,8 @@ impl Pipeline {
         Ok(PipelineOutput {
             url: url.to_owned(),
             phash,
-            score,
+            score: result.score,
+            label: result.label,
             cache_hit: false,
             elapsed_ms: start.elapsed().as_millis() as u64,
         })

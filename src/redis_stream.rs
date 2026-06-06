@@ -183,6 +183,7 @@ async fn publish_result(
                 ("url", output.url.as_str()),
                 ("phash", output.phash.as_str()),
                 ("score", &output.score.to_string()),
+                ("label", output.label.as_str()),
                 ("cache_hit", &output.cache_hit.to_string()),
                 ("elapsed_ms", &output.elapsed_ms.to_string()),
                 ("payload", &payload),
@@ -194,6 +195,7 @@ async fn publish_result(
         result_key,
         url = %output.url,
         score = output.score,
+        label = %output.label,
         cache_hit = output.cache_hit,
         elapsed_ms = output.elapsed_ms,
         "result published"

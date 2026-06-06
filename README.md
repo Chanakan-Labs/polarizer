@@ -47,7 +47,6 @@ cargo run --release
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `REDIS_URI` | ✅ | — | Redis connection string |
-| `MODEL_PATH` | ✅ | — | Path to `.onnx` model file |
 | `STREAM_KEY` | | `polarizer:jobs` | Input Redis stream |
 | `CONSUMER_GROUP` | | `polarizer-workers` | Consumer group name |
 | `CONSUMER_NAME` | | hostname | Unique consumer identifier |
@@ -61,6 +60,21 @@ cargo run --release
 | `HEALTH_PORT` | | `9090` | Health server port |
 | `LOG_LEVEL` | | `info` | Tracing filter directive |
 | `LOG_FORMAT` | | `pretty` | Set to `json` for structured output |
+
+#### Model / Inference
+
+These defaults are tuned for [`AdamCodd/vit-base-nsfw-detector`](https://huggingface.co/AdamCodd/vit-base-nsfw-detector) (`model_int8.onnx`).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MODEL_PATH` | `./model_int8.onnx` | Path to the ONNX model file |
+| `MODEL_INPUT_NAME` | `pixel_values` | Input tensor name expected by the model |
+| `MODEL_IMAGE_SIZE` | `384` | Square image dimension the model expects |
+| `MODEL_IMAGE_MEAN` | `0.5,0.5,0.5` | Per-channel normalization mean |
+| `MODEL_IMAGE_STD` | `0.5,0.5,0.5` | Per-channel normalization std |
+| `MODEL_TARGET_LABEL_INDEX` | `1` | Output logit index for the target label |
+| `MODEL_LABELS` | `sfw,nsfw` | Comma-separated label names |
+| `MODEL_INTRA_THREADS` | `4` | ONNX Runtime intra-op parallelism |
 
 ### Health Endpoints
 
@@ -77,14 +91,12 @@ For the complete schema detailing how to enqueue tasks and consume callbacks, se
 ## Docker
 
 ```bash
-# Build
+# Build (automatically downloads the int8 model)
 docker build -t polarizer .
 
-# Run (mount your model)
+# Run
 docker run -d \
-  -v ./model.onnx:/app/model.onnx \
   -e REDIS_URI=redis://host.docker.internal:6379 \
-  -e MODEL_PATH=/app/model.onnx \
   -p 9090:9090 \
   polarizer
 ```
