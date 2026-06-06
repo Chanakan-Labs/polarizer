@@ -87,16 +87,24 @@ impl StreamConsumer {
         // Semaphore to cap concurrent worker tasks.
         let semaphore = Arc::new(tokio::sync::Semaphore::new(self.config.worker_count));
 
+        // Create a DEDICATED connection for the blocking XREADGROUP command.
+        // If we share the pipeline.redis connection, the BLOCK command will stall
+        // the entire multiplexed connection, causing cache GET/SETs to hang for 5s!
+        let client = redis::Client::open(self.config.redis_uri.as_str())
+            .map_err(|e| anyhow::anyhow!("failed to create redis client: {e}"))?;
+        let mut read_conn = client
+            .get_connection_manager()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to create dedicated read connection: {e}"))?;
+
         loop {
             if self.cancel.is_cancelled() {
                 info!("cancellation received — exiting consumer loop");
                 break;
             }
 
-            let mut conn = self.pipeline.redis.clone();
-
             // ">" means read only new, never-delivered messages.
-            let reply: StreamReadReply = match conn
+            let reply: StreamReadReply = match read_conn
                 .xread_options(&[&self.config.stream_key], &[">"], &opts)
                 .await
             {
@@ -118,7 +126,8 @@ impl StreamConsumer {
 
                     let Some(url) = url else {
                         warn!(msg_id = %msg_id, "message missing 'url' field — acknowledging and skipping");
-                        let _: Result<(), _> = conn
+                        let mut xack_conn = self.pipeline.redis.clone();
+                        let _: Result<(), _> = xack_conn
                             .xack(&self.config.stream_key, &self.config.consumer_group, &[&msg_id])
                             .await;
                         continue;
