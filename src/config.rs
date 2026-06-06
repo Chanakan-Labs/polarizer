@@ -38,6 +38,9 @@ pub struct AppConfig {
     /// Redis key prefix for pHash cache entries.
     pub phash_prefix: String,
 
+    /// Redis key prefix for URL cache entries.
+    pub url_prefix: String,
+
     /// TTL for cached pHash → score mappings.
     pub phash_cache_ttl: Duration,
 
@@ -112,6 +115,7 @@ impl AppConfig {
                 .parse()
                 .context("MAX_DOWNLOAD_BYTES must be a valid u64")?,
             phash_prefix: optional("PHASH_PREFIX", "phash:"),
+            url_prefix: optional("URL_PREFIX", "url:"),
             phash_cache_ttl: Duration::from_secs(
                 optional("PHASH_CACHE_TTL_SECS", "604800") // 7 days
                     .parse()

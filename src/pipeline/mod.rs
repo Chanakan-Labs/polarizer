@@ -6,6 +6,7 @@ pub use download::ImageDownloader;
 pub use hasher::PerceptualHasher;
 pub use inference::OnnxInference;
 
+use reqwest::Url;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -73,6 +74,38 @@ impl Pipeline {
     #[instrument(skip(self), fields(url = %url))]
     pub async fn process(self: &Arc<Self>, url: &str) -> PipelineResult<PipelineOutput> {
         let start = Instant::now();
+        let mut conn = self.redis.clone();
+
+        // ── Step 0: Check URL cache ─────────────────────────────────────
+        let normalized_url = match Url::parse(url) {
+            Ok(mut parsed) => {
+                parsed.set_query(None);
+                parsed.to_string()
+            }
+            Err(_) => url.to_owned(),
+        };
+
+        let url_cache_key = format!("{}{}", self.config.url_prefix, normalized_url);
+        let url_cached: Option<String> = conn.get(&url_cache_key).await.ok().flatten();
+
+        if let Some(cached_json) = url_cached {
+            let parts: Vec<&str> = cached_json.split(':').collect();
+            if parts.len() == 3 {
+                if let Ok(score) = parts[0].parse::<f32>() {
+                    let label = parts[1];
+                    let phash = parts[2];
+                    debug!(url = %normalized_url, score, label, "url cache hit — skipping entirely");
+                    return Ok(PipelineOutput {
+                        url: url.to_owned(),
+                        phash: phash.to_owned(),
+                        score,
+                        label: label.to_owned(),
+                        cache_hit: true,
+                        elapsed_ms: start.elapsed().as_millis() as u64,
+                    });
+                }
+            }
+        }
 
         // ── Step 1 & 2: Download and decode ─────────────────────────────
         let bytes = self.downloader.fetch(url).await?;
@@ -81,17 +114,20 @@ impl Pipeline {
 
         // ── Step 3: Compute perceptual hash ─────────────────────────────
         let phash = self.hasher.hash(&img);
-        let cache_key = format!("{}{}", self.config.phash_prefix, phash);
+        let phash_cache_key = format!("{}{}", self.config.phash_prefix, phash);
 
         // ── Step 4: Check pHash cache ───────────────────────────────────
-        let mut conn = self.redis.clone();
-        let cached: Option<String> = conn.get(&cache_key).await.ok().flatten();
+        let phash_cached: Option<String> = conn.get(&phash_cache_key).await.ok().flatten();
 
-        if let Some(cached_json) = cached {
-            // Cache stores "score:label" for compactness.
+        if let Some(cached_json) = phash_cached {
             if let Some((score_str, label)) = cached_json.split_once(':') {
                 if let Ok(score) = score_str.parse::<f32>() {
-                    debug!(phash = %phash, score, label, "cache hit — skipping inference");
+                    debug!(phash = %phash, score, label, "phash cache hit — skipping inference");
+                    
+                    let url_cache_value = format!("{}:{}:{}", score, label, phash);
+                    let ttl_secs = self.config.phash_cache_ttl.as_secs();
+                    let _: () = conn.set_ex(&url_cache_key, &url_cache_value, ttl_secs).await.unwrap_or(());
+
                     return Ok(PipelineOutput {
                         url: url.to_owned(),
                         phash,
@@ -116,15 +152,24 @@ impl Pipeline {
         );
 
         // ── Step 6: Cache the result ────────────────────────────────────
-        let cache_value = format!("{}:{}", result.score, result.label);
         let ttl_secs = self.config.phash_cache_ttl.as_secs();
+
+        let phash_cache_value = format!("{}:{}", result.score, result.label);
         let _: () = conn
-            .set_ex(&cache_key, &cache_value, ttl_secs)
+            .set_ex(&phash_cache_key, &phash_cache_value, ttl_secs)
             .await
             .map_err(|e| {
-                warn!(error = %e, key = %cache_key, "failed to cache phash score");
+                warn!(error = %e, key = %phash_cache_key, "failed to cache phash score");
                 e
             })?;
+
+        let url_cache_value = format!("{}:{}:{}", result.score, result.label, phash);
+        let _: () = conn
+            .set_ex(&url_cache_key, &url_cache_value, ttl_secs)
+            .await
+            .unwrap_or_else(|e| {
+                warn!(error = %e, key = %url_cache_key, "failed to cache url score");
+            });
 
         Ok(PipelineOutput {
             url: url.to_owned(),
