@@ -200,6 +200,8 @@ async fn publish_result(
         .arg("*")
         .arg("url")
         .arg(output.url.as_str())
+        .arg("xxh3")
+        .arg(output.xxh3.as_str())
         .arg("phash")
         .arg(output.phash.as_str())
         .arg("score")

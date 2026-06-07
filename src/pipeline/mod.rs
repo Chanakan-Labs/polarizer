@@ -32,6 +32,8 @@ pub struct Pipeline {
 pub struct PipelineOutput {
     /// The original image URL that was processed.
     pub url: String,
+    /// Fast non-cryptographic hash (XXH3_64) of the exact downloaded bytes.
+    pub xxh3: String,
     /// Perceptual hash (base64-encoded).
     pub phash: String,
     /// Probability for the target label (0.0–1.0).
@@ -90,13 +92,15 @@ impl Pipeline {
 
         if let Some(cached_json) = url_cached {
             let parts: Vec<&str> = cached_json.split(':').collect();
-            if parts.len() == 3 {
+            if parts.len() >= 3 {
                 if let Ok(score) = parts[0].parse::<f32>() {
                     let label = parts[1];
                     let phash = parts[2];
+                    let xxh3 = if parts.len() >= 4 { parts[3].to_owned() } else { "".to_owned() };
                     debug!(url = %normalized_url, score, label, "url cache hit — skipping entirely");
                     return Ok(PipelineOutput {
                         url: url.to_owned(),
+                        xxh3,
                         phash: phash.to_owned(),
                         score,
                         label: label.to_owned(),
@@ -107,12 +111,49 @@ impl Pipeline {
             }
         }
 
-        // ── Step 1 & 2: Download and decode ─────────────────────────────
+        // ── Step 1: Download ────────────────────────────────────────────
         let bytes = self.downloader.fetch(url).await?;
+
+        // ── Step 2: Compute XXH3 byte hash and check cache ──────────────
+        let xxh3_val = xxhash_rust::xxh3::xxh3_64(&bytes);
+        let xxh3 = format!("{:016x}", xxh3_val);
+        let xxh3_cache_key = format!("{}{}", self.config.xxh3_prefix, xxh3);
+
+        let xxh3_cached: Option<String> = conn.get(&xxh3_cache_key).await.ok().flatten();
+
+        if let Some(cached_json) = xxh3_cached {
+            let parts: Vec<&str> = cached_json.split(':').collect();
+            if parts.len() >= 3 {
+                if let Ok(score) = parts[0].parse::<f32>() {
+                    let label = parts[1];
+                    let phash = parts[2];
+                    debug!(xxh3 = %xxh3, score, label, "xxh3 cache hit — skipping decode and inference");
+
+                    let url_cache_value = format!("{}:{}:{}:{}", score, label, phash, xxh3);
+                    let ttl_secs = self.config.phash_cache_ttl.as_secs();
+                    let _: () = conn
+                        .set_ex(&url_cache_key, &url_cache_value, ttl_secs)
+                        .await
+                        .unwrap_or(());
+
+                    return Ok(PipelineOutput {
+                        url: url.to_owned(),
+                        xxh3,
+                        phash: phash.to_owned(),
+                        score,
+                        label: label.to_owned(),
+                        cache_hit: true,
+                        elapsed_ms: start.elapsed().as_millis() as u64,
+                    });
+                }
+            }
+        }
+
+        // ── Step 3: Decode image ────────────────────────────────────────
         let img = image::load_from_memory(&bytes)?;
         debug!(width = img.width(), height = img.height(), "image decoded");
 
-        // ── Step 3: Compute perceptual hash ─────────────────────────────
+        // ── Step 4: Compute perceptual hash ─────────────────────────────
         let phash = self.hasher.hash(&img);
         let phash_cache_key = format!("{}{}", self.config.phash_prefix, phash);
 
@@ -124,8 +165,15 @@ impl Pipeline {
                 if let Ok(score) = score_str.parse::<f32>() {
                     debug!(phash = %phash, score, label, "phash cache hit — skipping inference");
 
-                    let url_cache_value = format!("{}:{}:{}", score, label, phash);
                     let ttl_secs = self.config.phash_cache_ttl.as_secs();
+
+                    let xxh3_cache_value = format!("{}:{}:{}", score, label, phash);
+                    let _: () = conn
+                        .set_ex(&xxh3_cache_key, &xxh3_cache_value, ttl_secs)
+                        .await
+                        .unwrap_or(());
+
+                    let url_cache_value = format!("{}:{}:{}:{}", score, label, phash, xxh3);
                     let _: () = conn
                         .set_ex(&url_cache_key, &url_cache_value, ttl_secs)
                         .await
@@ -133,6 +181,7 @@ impl Pipeline {
 
                     return Ok(PipelineOutput {
                         url: url.to_owned(),
+                        xxh3,
                         phash,
                         score,
                         label: label.to_owned(),
@@ -166,7 +215,15 @@ impl Pipeline {
                 e
             })?;
 
-        let url_cache_value = format!("{}:{}:{}", result.score, result.label, phash);
+        let xxh3_cache_value = format!("{}:{}:{}", result.score, result.label, phash);
+        let _: () = conn
+            .set_ex(&xxh3_cache_key, &xxh3_cache_value, ttl_secs)
+            .await
+            .unwrap_or_else(|e| {
+                warn!(error = %e, key = %xxh3_cache_key, "failed to cache xxh3 score");
+            });
+
+        let url_cache_value = format!("{}:{}:{}:{}", result.score, result.label, phash, xxh3);
         let _: () = conn
             .set_ex(&url_cache_key, &url_cache_value, ttl_secs)
             .await
@@ -176,6 +233,7 @@ impl Pipeline {
 
         Ok(PipelineOutput {
             url: url.to_owned(),
+            xxh3,
             phash,
             score: result.score,
             label: result.label,

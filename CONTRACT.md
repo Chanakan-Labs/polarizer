@@ -25,6 +25,7 @@ Once an image is processed (or hits the cache), Polarizer writes a result to the
 ```
 XADD polarizer:results *
   url        "https://cdn.discordapp.com/attachments/.../image.png"
+  xxh3       "a1b2c3d4e5f6g7h8"
   phash      "dGVzdA=="
   score      "0.87"
   label      "nsfw"
@@ -36,10 +37,11 @@ XADD polarizer:results *
 | Field | Type | Description |
 |-------|------|-------------|
 | `url` | string | The original URL that was processed |
+| `xxh3` | string | Fast non-cryptographic hash (XXH3_64) of the exact downloaded bytes, used for perfect duplicate detection |
 | `phash` | string | Perceptual hash of the image (base64-encoded) |
 | `score` | string (float) | Probability for the target label after softmax (0.0–1.0) |
 | `label` | string | Human-readable label name (e.g. `nsfw`, `sfw`) |
-| `cache_hit` | string (bool) | `true` if the result came from pHash cache, `false` if inference ran |
+| `cache_hit` | string (bool) | `true` if the result came from URL, XXH3, or pHash cache; `false` if inference ran |
 | `elapsed_ms` | string (u64) | Wall-clock processing time in milliseconds |
 | `payload` | string (JSON) | All fields above serialized as a JSON object for convenience |
 
@@ -48,6 +50,7 @@ XADD polarizer:results *
 ```json
 {
   "url": "https://cdn.discordapp.com/attachments/.../image.png",
+  "xxh3": "a1b2c3d4e5f6g7h8",
   "phash": "dGVzdA==",
   "score": 0.87,
   "label": "nsfw",
