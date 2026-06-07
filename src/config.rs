@@ -61,7 +61,7 @@ pub struct AppConfig {
     pub model_image_std: [f32; 3],
 
     /// Comma-separated label names matching the model's output indices.
-    /// Used for human-readable output (e.g. "sfw,nsfw").
+    /// Used for human-readable output (e.g. "nsfw,normal").
     pub model_labels: Vec<String>,
 
     /// Number of ONNX Runtime intra-op threads (parallelism within a single operator).
@@ -79,13 +79,13 @@ pub struct AppConfig {
 impl AppConfig {
     /// Build config from environment variables, applying sensible defaults.
     ///
-    /// Defaults are tuned for [`AdamCodd/vit-base-nsfw-detector`](https://huggingface.co/AdamCodd/vit-base-nsfw-detector)
-    /// with the `model_int8.onnx` variant.
+    /// Defaults are tuned for [`Falconsai/nsfw_image_detection_26`](https://huggingface.co/Falconsai/nsfw_image_detection_26)
+    /// with the `quantized_model.onnx` variant.
     pub fn from_env() -> Result<Self> {
         Ok(Self {
             // Required
             redis_uri: required("REDIS_URI")?,
-            model_path: optional("MODEL_PATH", "./model_int8.onnx"),
+            model_path: optional("MODEL_PATH", "./quantized_model.onnx"),
 
             // Optional with defaults
             stream_key: optional("STREAM_KEY", "polarizer:jobs"),
@@ -121,7 +121,7 @@ impl AppConfig {
 
             // Model / inference knobs
             model_input_name: optional("MODEL_INPUT_NAME", "pixel_values"),
-            model_image_size: optional("MODEL_IMAGE_SIZE", "384")
+            model_image_size: optional("MODEL_IMAGE_SIZE", "224")
                 .parse()
                 .context("MODEL_IMAGE_SIZE must be a valid u32")?,
             model_image_mean: parse_f32_triple(&optional("MODEL_IMAGE_MEAN", "0.5,0.5,0.5"))
@@ -132,7 +132,7 @@ impl AppConfig {
                 .context(
                     "MODEL_IMAGE_STD must be three comma-separated floats (e.g. 0.5,0.5,0.5)",
                 )?,
-            model_labels: optional("MODEL_LABELS", "sfw,nsfw")
+            model_labels: optional("MODEL_LABELS", "nsfw,normal")
                 .split(',')
                 .map(|s| s.trim().to_owned())
                 .collect(),

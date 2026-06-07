@@ -63,17 +63,17 @@ cargo run --release
 
 #### Model / Inference
 
-These defaults are tuned for [`AdamCodd/vit-base-nsfw-detector`](https://huggingface.co/AdamCodd/vit-base-nsfw-detector) (`model_int8.onnx`).
+These defaults are tuned for [`Falconsai/nsfw_image_detection_26`](https://huggingface.co/Falconsai/nsfw_image_detection_26) (`quantized_model.onnx`).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MODEL_PATH` | `./model_int8.onnx` | Path to the ONNX model file |
+| `MODEL_PATH` | `./quantized_model.onnx` | Path to the ONNX model file |
 | `MODEL_INPUT_NAME` | `pixel_values` | Input tensor name expected by the model |
-| `MODEL_IMAGE_SIZE` | `384` | Square image dimension the model expects |
+| `MODEL_IMAGE_SIZE` | `224` | Square image dimension the model expects |
 | `MODEL_IMAGE_MEAN` | `0.5,0.5,0.5` | Per-channel normalization mean |
 | `MODEL_IMAGE_STD` | `0.5,0.5,0.5` | Per-channel normalization std |
-| `MODEL_TARGET_LABEL_INDEX` | `1` | Output logit index for the target label |
-| `MODEL_LABELS` | `sfw,nsfw` | Comma-separated label names |
+| `MODEL_TARGET_LABEL_INDEX` | `0` | Output logit index for the target label |
+| `MODEL_LABELS` | `nsfw,normal` | Comma-separated label names |
 | `MODEL_INTRA_THREADS` | `4` | ONNX Runtime intra-op parallelism |
 
 ### Health Endpoints
@@ -91,8 +91,8 @@ For the complete schema detailing how to enqueue tasks and consume callbacks, se
 ## Docker
 
 ```bash
-# Build (automatically downloads the int8 model)
-docker build -t polarizer .
+# Build (requires HuggingFace token since the model repository is gated)
+HF_TOKEN=hf_your_token_here docker build --secret id=hf_token,env=HF_TOKEN -t polarizer .
 
 # Run
 docker run -d \

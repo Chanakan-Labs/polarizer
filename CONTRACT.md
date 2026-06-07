@@ -58,12 +58,13 @@ XADD polarizer:results *
 
 ### Interpreting the Score
 
-The `score` is the softmax probability for the target label (configured via `MODEL_TARGET_LABEL_INDEX`, default `1` = `nsfw`). A higher score means higher confidence that the image matches that label.
+The `score` is the softmax probability for the *predicted label* (which is output in the `label` field, e.g. `nsfw` or `normal`). A higher score means higher confidence that the image matches the predicted label.
 
-| Score Range | Interpretation |
-|-------------|----------------|
-| `0.0 – 0.3` | Very likely SFW |
-| `0.3 – 0.7` | Ambiguous — may warrant manual review |
-| `0.7 – 1.0` | Very likely NSFW |
+For example, if `label` is `nsfw` and `score` is `0.95`, the model is 95% confident the image is NSFW. If `label` is `normal` and `score` is `0.85`, the model is 85% confident the image is normal (which means the probability of it being NSFW is `0.15`).
+
+| Confidence Score | Interpretation |
+|------------------|----------------|
+| `0.8 – 1.0` | High confidence in the predicted label |
+| `0.5 – 0.8` | Lower confidence — may warrant manual review if borderline |
 
 > **Note:** These thresholds are guidelines. Tune the decision boundary based on your moderation policy.

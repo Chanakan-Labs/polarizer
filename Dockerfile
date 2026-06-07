@@ -32,8 +32,9 @@ RUN mkdir -p /app/out-libs && \
     find /root/.cache/ort.pyke.io target/ -name "libonnxruntime.so*" -exec cp {} /app/out-libs/ \;
 
 # Download the ONNX model so it can be baked into the final image
-ARG MODEL_URL="https://huggingface.co/AdamCodd/vit-base-nsfw-detector/resolve/main/onnx/model_int8.onnx"
-RUN curl -sLo /app/model_int8.onnx "${MODEL_URL}"
+ARG MODEL_URL="https://huggingface.co/Falconsai/nsfw_image_detection_26/resolve/main/quantized_onnx/quantized_model.onnx"
+RUN --mount=type=secret,id=hf_token \
+    curl -sLo /app/quantized_model.onnx -H "Authorization: Bearer $(cat /run/secrets/hf_token)" "${MODEL_URL}"
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
 FROM ubuntu:24.04
@@ -56,7 +57,7 @@ COPY --from=builder /app/out-libs/ /usr/lib/
 ENV LD_LIBRARY_PATH=/usr/lib
 
 # Copy the downloaded model into the image
-COPY --from=builder /app/model_int8.onnx /app/model_int8.onnx
+COPY --from=builder /app/quantized_model.onnx /app/quantized_model.onnx
 
 USER nonroot
 
