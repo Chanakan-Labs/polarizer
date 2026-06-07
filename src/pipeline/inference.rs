@@ -50,11 +50,17 @@ impl OnnxInference {
             .map_err(|e| anyhow::anyhow!("failed to set intra threads: {e}"))?
             .commit_from_file(&config.model_path)?;
 
+        let input_name = session
+            .inputs()
+            .first()
+            .map(|i| i.name().to_string())
+            .unwrap_or_else(|| config.model_input_name.clone());
+
         debug!(
             inputs = ?session.inputs().iter().map(|i| i.name()).collect::<Vec<_>>(),
             outputs = ?session.outputs().iter().map(|o| o.name()).collect::<Vec<_>>(),
             image_size = config.model_image_size,
-            input_name = %config.model_input_name,
+            input_name = %input_name,
             labels = ?config.model_labels,
             "ONNX model loaded"
         );
@@ -66,7 +72,7 @@ impl OnnxInference {
                 mean: config.model_image_mean,
                 std: config.model_image_std,
             },
-            input_name: config.model_input_name.clone(),
+            input_name,
             labels: config.model_labels.clone(),
         })
     }
