@@ -34,7 +34,10 @@ RUN mkdir -p /app/out-libs && \
 # Download the ONNX model so it can be baked into the final image
 ARG MODEL_URL="https://huggingface.co/Falconsai/nsfw_image_detection_26/resolve/main/quantized_onnx/quantized_model.onnx"
 RUN --mount=type=secret,id=hf_token \
-    curl -sLo /app/quantized_model.onnx -H "Authorization: Bearer $(cat /run/secrets/hf_token)" "${MODEL_URL}"
+    if [ ! -f /run/secrets/hf_token ]; then \
+        echo "ERROR: hf_token secret not found. Please pass it using --secret id=hf_token,src=... or --secret id=hf_token,env=HF_TOKEN" && exit 1; \
+    fi && \
+    curl -f -sLo /app/quantized_model.onnx -H "Authorization: Bearer $(cat /run/secrets/hf_token)" "${MODEL_URL}"
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
 FROM ubuntu:24.04
